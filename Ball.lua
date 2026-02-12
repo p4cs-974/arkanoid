@@ -12,7 +12,7 @@
     scoring a point for the opponent.
 ]]
 
-Ball = Class{}
+Ball = Class {}
 
 function Ball:init(x, y, width, height)
     self.x = x
@@ -52,7 +52,7 @@ end
 ]]
 function Ball:reset()
     self.x = VIRTUAL_WIDTH / 2 - 2
-    self.y = VIRTUAL_HEIGHT / 2 - 2
+    self.y = VIRTUAL_HEIGHT - 26
     self.dx = 0
     self.dy = 0
 end
