@@ -97,7 +97,7 @@ function love.load()
     ball = Ball(VIRTUAL_WIDTH / 2 - 2, VIRTUAL_HEIGHT - 26, 4, 4)
 
     -- initialize score variable
-    player1Score = 0
+    HP = 3
 
     -- the state of our game; can be any of the following:
     -- 1. 'start' (the beginning of the game, before first serve)
@@ -170,11 +170,11 @@ function love.update(dt)
 
         -- -4 to account for the ball's size
         if ball.y >= VIRTUAL_HEIGHT - 4 then
-            player1Score = player1Score + 1
+            HP = HP - 1
             sounds['score']:play()
 
-            if player1Score == 10 then
-                gameState = 'done'
+            if HP == 0 then
+                gameState = 'over'
             else
                 gameState = 'serve'
                 ball:reset()
@@ -229,14 +229,15 @@ function love.keypressed(key)
             gameState = 'serve'
         elseif gameState == 'serve' then
             gameState = 'play'
-        elseif gameState == 'done' then
+        elseif gameState == 'done' or gameState == 'over' then
             -- game is simply in a restart phase here
-            gameState = 'serve'
+            gameState = 'start'
 
             ball:reset()
+            player1:reset()
 
             -- reset score to 0
-            player1Score = 0
+            HP = 3
         end
     end
 end
@@ -278,13 +279,13 @@ function love.draw()
     end
 
     -- show the score before ball is rendered so it can move over the text
-    -- displayScore()
+    displayHP()
 
     player1:render()
     ball:render()
 
     -- display FPS for debugging; simply comment out to remove
-    displayFPS()
+    -- displayFPS()
 
     -- end our drawing to push
     push:finish()
@@ -293,11 +294,15 @@ end
 --[[
     Simple function for rendering the scores.
 ]]
-function displayScore()
+function displayHP()
     -- score display
-    love.graphics.setFont(scoreFont)
-    love.graphics.print(tostring(player1Score), VIRTUAL_WIDTH / 2 - 15,
-        VIRTUAL_HEIGHT / 3)
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.rectangle('fill', 25, 15, 22, 10)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setFont(smallFont)
+    love.graphics.printf(string.rep('x', HP), 30, 16, 65, "left")
+    love.graphics.setFont(smallFont)
+    love.graphics.printf('HP', 10, 16, 13, "right")
 end
 
 --[[
