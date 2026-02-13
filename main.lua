@@ -35,6 +35,9 @@ Class = require 'class'
 -- and the logic for rendering them
 require 'Paddle'
 
+require 'Wall'
+require 'Row'
+require 'Brick'
 -- our Ball class, which isn't much different than a Paddle structure-wise
 -- but which will mechanically function very differently
 require 'Ball'
@@ -60,6 +63,7 @@ function love.load()
     -- important for a nice crisp, 2D look
     love.graphics.setDefaultFilter('nearest', 'nearest')
 
+    testWall = Wall(40, 100)
     -- set the title of our application window
     love.window.setTitle('Pong')
 
@@ -252,6 +256,7 @@ function love.draw()
 
     love.graphics.clear(40 / 255, 45 / 255, 52 / 255, 255 / 255)
 
+    testWall:render()
     -- render different things depending on which part of the game we're in
     if gameState == 'start' then
         -- UI messages
