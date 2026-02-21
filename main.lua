@@ -42,6 +42,9 @@ require 'Brick'
 -- but which will mechanically function very differently
 require 'Ball'
 
+-- GameState enum for better DX
+GameState = require 'GameState'
+
 -- size of our actual window
 WINDOW_WIDTH = 750
 WINDOW_HEIGHT = 1000
@@ -81,7 +84,7 @@ function love.load()
 
     testWall = Wall(stageConfigs[1])
     -- set the title of our application window
-    love.window.setTitle('Pong')
+    love.window.setTitle('Lovekanoid')
 
     -- seed the RNG so that calls to random are always random
     math.randomseed(os.time())
@@ -117,14 +120,9 @@ function love.load()
 
     HP = 3
 
-    -- max ball speed (can be changed per level)
     ballMaxSpeed = 250
 
-    -- 1. 'start' (abertura do jogo, cena de apresentação)
-    -- 2. 'serve' (esperando "saque" do usuário)
-    -- 3. 'play' (jogo rolando)
-    -- 4. 'done' (final de jogo, vitória ou derrota)
-    gameState = 'start'
+    gameState = GameState.START
 
     currentStage = 0
 
@@ -139,10 +137,10 @@ end
 
 function love.update(dt)
     -- track inactivity in start state
-    if gameState == 'start' then
+    if gameState == GameState.START then
         inactivityTimer = inactivityTimer + dt
         if inactivityTimer >= DEMO_DELAY then
-            gameState = 'demo'
+            gameState = GameState.DEMO
             inactivityTimer = 0
             -- reset ball for demo
             ball:reset()
@@ -151,7 +149,7 @@ function love.update(dt)
         end
     end
 
-    if gameState == 'demo' then
+    if gameState == GameState.DEMO then
         -- AI: paddle follows ball
         local paddleCenter = player1.x + player1.width / 2
         local ballCenter = ball.x + ball.width / 2
@@ -216,10 +214,10 @@ function love.update(dt)
         end
 
         ball:update(dt)
-    elseif gameState == 'serve' then
+    elseif gameState == GameState.SERVE then
         ball.dy = -200
         ball.dx = math.random(-100, 100)
-    elseif gameState == 'stage-1' or gameState == 'stage-2' then
+    elseif gameState == GameState.STAGE_1 or gameState == GameState.STAGE_2 then
         if love.keyboard.isDown('a') then
             player1.dx = -PADDLE_SPEED
         elseif love.keyboard.isDown('d') then
@@ -275,12 +273,12 @@ function love.update(dt)
                         end
                     end
 
-                    if allDestroyed and gameState == 'stage-1' then
+                    if allDestroyed and gameState == GameState.STAGE_1 then
                         currentStage = currentStage + 1
-                        gameState = 'stage-1-passed'
+                        gameState = GameState.STAGE_1_PASSED
                     end
-                    if allDestroyed and gameState == 'stage-2' then
-                        gameState = 'done'
+                    if allDestroyed and gameState == GameState.STAGE_2 then
+                        gameState = GameState.DONE
                     end
 
                     break
@@ -302,9 +300,9 @@ function love.update(dt)
             sounds['score']:play()
 
             if HP == 0 then
-                gameState = 'over'
+                gameState = GameState.OVER
             else
-                gameState = 'serve'
+                gameState = GameState.SERVE
                 ball:reset()
                 player1:reset()
             end
@@ -334,7 +332,7 @@ function love.update(dt)
 
     -- update our ball based on its DX and DY only if we're in stage-1 state;
     -- scale the velocity by dt so movement is framerate-independent
-    if gameState == 'stage-1' or gameState == 'stage-2' then
+    if gameState == GameState.STAGE_1 or gameState == GameState.STAGE_2 then
         ball:update(dt)
     end
 end
@@ -358,33 +356,33 @@ function love.keypressed(key)
         -- if we press enter during either the start or serve phase, it should
         -- transition to the next appropriate state
     elseif key == 'enter' or key == 'return' then
-        if gameState == 'start' and currentStage == 0 then
+        if gameState == GameState.START and currentStage == 0 then
             currentStage = currentStage + 1
         elseif gameState == 'start' and currentStage ~= 0 then
             gameState = 'serve'
-        elseif gameState == 'demo' then
-            gameState = 'start'
+        elseif gameState == GameState.DEMO then
+            gameState = GameState.START
             ball:reset()
             player1:reset()
             -- reset wall for demo
             testWall = Wall(stageConfigs[currentStage == 0 and 1 or currentStage])
-        elseif gameState == 'serve' then
+        elseif gameState == GameState.SERVE then
             -- set max speed based on current stage
             if currentStage == 1 then
                 ballMaxSpeed = 250
             elseif currentStage == 2 then
                 ballMaxSpeed = 350
             end
-            gameState = 'stage-' .. currentStage
-        elseif gameState == 'stage-1-passed' then
+            gameState = currentStage == 1 and GameState.STAGE_1 or GameState.STAGE_2
+        elseif gameState == GameState.STAGE_1_PASSED then
             HP = 3
             ball:reset()
             player1:reset()
             testWall = Wall(stageConfigs[2])
-            gameState = 'start'
-        elseif gameState == 'done' or gameState == 'over' then
+            gameState = GameState.START
+        elseif gameState == GameState.DONE or gameState == GameState.OVER then
             -- game is simply in a restart phase here
-            gameState = 'start'
+            gameState = GameState.START
 
             ball:reset()
             player1:reset()
@@ -412,24 +410,24 @@ function love.draw()
     -- render different things depending on which part of the game we're in
     if gameState == 'start' and currentStage == 0 then
         drawAlertBox('Welcome to Arkanoid!', 'Press ENTER to start the game.')
-    elseif gameState == 'start' and currentStage == 1 then
+    elseif gameState == GameState.START and currentStage == 1 then
         -- UI messages
         drawAlertBox('STAGE 1', 'Press ENTER to begin!')
-    elseif gameState == 'stage-1-passed' then
+    elseif gameState == GameState.STAGE_1_PASSED then
         drawAlertBox('STAGE 1 CLEAR!', 'Press ENTER to load stage 2!')
-    elseif gameState == 'start' and currentStage == 2 then
+    elseif gameState == GameState.START and currentStage == 2 then
         drawAlertBox('LEVEL 2', 'Press ENTER to begin!')
-    elseif gameState == 'serve' then
+    elseif gameState == GameState.SERVE then
         love.graphics.setFont(smallFont)
         drawAlertBox('Throw the ball!', 'Press ENTER to launch!')
-    elseif gameState == 'demo' then
+    elseif gameState == GameState.DEMO then
         drawDemoBox()
-    elseif gameState == 'over' then
+    elseif gameState == GameState.OVER then
         drawAlertBox('You lose =(', 'Press ENTER to reset.')
         -- love.graphics.setFont(largeFont)
         -- love.graphics.printf('You lose =(',
         --     0, VIRTUAL_HEIGHT / 2 - 80, VIRTUAL_WIDTH, 'center')
-    elseif gameState == 'done' then
+    elseif gameState == GameState.DONE then
         -- UI messages
         drawAlertBox('You WIN! =)', 'Press ENTER to reset.')
     end
