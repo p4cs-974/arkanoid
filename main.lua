@@ -404,7 +404,7 @@ function love.draw()
     love.graphics.clear(40 / 255, 45 / 255, 52 / 255, 255 / 255)
 
     -- display debug info box in top-right corner
-    displayDebugBox()
+    -- displayDebugBox()
 
     testWall:render()
     -- render different things depending on which part of the game we're in
