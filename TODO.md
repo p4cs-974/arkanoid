@@ -1,5 +1,5 @@
 - [x] Blocos quebraveis
 - [x] Duas ou mais cenas do jogo
-- [ ] Cena de apresentação do jogo
+- [x] Cena de apresentação do jogo
 - [x] Cena de vitória
 - [x] Cena de derrota
