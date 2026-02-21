@@ -367,14 +367,16 @@ end
     Simple function for rendering the scores.
 ]]
 function displayHP()
-    -- score display
-    love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.rectangle('fill', 25, 15, 22, 10)
+    -- draw fancy box around HP display (inner area: x=10 to x=50, y=15 to y=27)
+    drawFancyBox(5, 10, 55, 32)
+
+    -- HP text and hearts - centered vertically, equal horizontal margins
+    love.graphics.setColor(1, 0.3, 0.3, 1)
+    love.graphics.setFont(smallFont)
+    love.graphics.print('HP', 14, 17)
+
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.setFont(smallFont)
-    love.graphics.printf(string.rep('x', HP), 30, 16, 65, "left")
-    love.graphics.setFont(smallFont)
-    love.graphics.printf('HP', 10, 16, 13, "right")
+    love.graphics.print(string.rep('x', HP), 31, 17)
 end
 
 --[[
@@ -456,5 +458,5 @@ function drawFancyBox(x1, y1, x2, y2)
 
     -- draw white border (offset by 5 pixels)
     love.graphics.setColor(old_r, old_g, old_b, old_a)
-    love.graphics.rectangle('line', x1 + 5, y1 + 5, width - 10, height - 10)
+    love.graphics.rectangle('line', x1 + 2, y1 + 2, width - 4, height - 4)
 end
