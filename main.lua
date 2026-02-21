@@ -63,7 +63,23 @@ function love.load()
     -- important for a nice crisp, 2D look
     love.graphics.setDefaultFilter('nearest', 'nearest')
 
-    testWall = Wall(40, 100)
+    -- Stage configurations
+    stageConfigs = {
+        [1] = {
+            rowCount = 2,         -- 4 rows of bricks
+            bricksPerRow = 4,     -- 8 bricks per row
+            baseHP = 1,           -- Base HP value
+            hpScaling = 'uniform' -- All bricks have 1 HP
+        },
+        [2] = {
+            rowCount = 6,            -- 6 rows of bricks
+            bricksPerRow = 10,       -- 10 bricks per row
+            baseHP = 1,              -- Base HP value
+            hpScaling = 'descending' -- Top rows have more HP (1+6-row)
+        }
+    }
+
+    testWall = Wall(stageConfigs[1])
     -- set the title of our application window
     love.window.setTitle('Pong')
 
@@ -81,7 +97,8 @@ function love.load()
     sounds = {
         ['paddle_hit'] = love.audio.newSource('sounds/paddle_hit.wav', 'static'),
         ['score'] = love.audio.newSource('sounds/score.wav', 'static'),
-        ['wall_hit'] = love.audio.newSource('sounds/wall_hit.wav', 'static')
+        ['wall_hit'] = love.audio.newSource('sounds/wall_hit.wav', 'static'),
+        ['brick_hit'] = love.audio.newSource('sounds/wall_hit.wav', 'static') -- Using wall_hit as placeholder
     }
 
     -- initialize our virtual resolution, which will be rendered within our
@@ -93,48 +110,34 @@ function love.load()
         canvas = false
     })
 
-    -- initialize our player paddles; make them global so that they can be
-    -- detected by other functions and modules
     player1 = Paddle(VIRTUAL_WIDTH / 2 - 13, VIRTUAL_HEIGHT - 20, 26, 5)
 
-    -- place a ball in the middle of the screen
+
     ball = Ball(VIRTUAL_WIDTH / 2 - 2, VIRTUAL_HEIGHT - 26, 4, 4)
 
-    -- initialize score variable
     HP = 3
 
-    -- the state of our game; can be any of the following:
-    -- 1. 'start' (the beginning of the game, before first serve)
-    -- 2. 'serve' (waiting on a key press to serve the ball)
-    -- 3. 'play' (the ball is in play, bouncing between paddles)
-    -- 4. 'done' (the game is over, with a victor, ready for restart)
+    -- max ball speed (can be changed per level)
+    ballMaxSpeed = 250
+
+    -- 1. 'start' (abertura do jogo, cena de apresentação)
+    -- 2. 'serve' (esperando "saque" do usuário)
+    -- 3. 'play' (jogo rolando)
+    -- 4. 'done' (final de jogo, vitória ou derrota)
     gameState = 'start'
+
+    currentStage = 0
 end
 
---[[
-    Called whenever we change the dimensions of our window, as by dragging
-    out its bottom corner, for example. In this case, we only need to worry
-    about calling out to `push` to handle the resizing. Takes in a `w` and
-    `h` variable representing width and height, respectively.
-]]
 function love.resize(w, h)
     push:resize(w, h)
 end
 
---[[
-    Called every frame, passing in `dt` since the last frame. `dt`
-    is short for `deltaTime` and is measured in seconds. Multiplying
-    this by any changes we wish to make in our game will allow our
-    game to perform consistently across all hardware; otherwise, any
-    changes we make will be applied as fast as possible and will vary
-    across system hardware.
-]]
 function love.update(dt)
     if gameState == 'serve' then
-        -- before switching to play, initialize ball's velocity
-        ball.dy = -100
+        ball.dy = -200
         ball.dx = math.random(-100, 100)
-    elseif gameState == 'play' then
+    elseif gameState == 'stage-1' or gameState == 'stage-2' then
         if love.keyboard.isDown('a') then
             player1.dx = -PADDLE_SPEED
         elseif love.keyboard.isDown('d') then
@@ -143,26 +146,65 @@ function love.update(dt)
             player1.dx = 0
         end
         player1:update(dt)
-        -- detect ball collision with paddles, reversing dx if true and
-        -- slightly increasing it, then altering the dy based on the position
-        -- at which it collided, then playing a sound effect
+
         if ball:collides(player1) then
-            -- Calculate current speed before modifying
+            -- Get current speed (maintain constant speed after bounce)
             local currentSpeed = math.sqrt(ball.dx ^ 2 + ball.dy ^ 2)
 
-            ball.dy = -ball.dy
-            ball.y = player1.y - 5
+            -- Calculate where on the paddle the ball hit (0 = left edge, 1 = right edge)
+            local hitPoint = (ball.x - player1.x) / player1.width
 
-            ball.dx = ((ball.x - player1.x)) * 20
+            -- Clamp hitPoint to handle edge cases
+            hitPoint = math.max(0, math.min(1, hitPoint))
 
-            -- Normalize to maintain constant speed
-            local newSpeed = math.sqrt(ball.dx ^ 2 + ball.dy ^ 2)
-            ball.dx = (ball.dx / newSpeed) * currentSpeed
-            ball.dy = (ball.dy / newSpeed) * currentSpeed
+            -- Map hitPoint to angle: center (0.5) = 0°, left edge = -60°, right edge = +60°
+            local angle = (hitPoint - 0.5) * 2 * (math.pi / 3)
+
+            -- Calculate new velocity: angle 0 = straight up (negative Y)
+            ball.dx = currentSpeed * math.sin(angle)
+            ball.dy = -currentSpeed * math.cos(angle)
+
+            -- Push ball out of paddle to prevent sticking
+            ball.y = player1.y - ball.height - 1
+
+            limitBallSpeed()
 
             sounds['paddle_hit']:play()
         end
 
+        for _, row in ipairs(testWall.rows) do
+            for _, brick in ipairs(row.bricks) do
+                if brick.alive and ball:collides(brick) then
+                    brick:hit()
+                    ball.dy = -ball.dy
+                    sounds['brick_hit']:play()
+
+                    -- check win condition
+                    local allDestroyed = true
+                    for _, checkRow in ipairs(testWall.rows) do
+                        for _, checkBrick in ipairs(checkRow.bricks) do
+                            if checkBrick.alive then
+                                allDestroyed = false
+                                break
+                            end
+                        end
+                        if not allDestroyed then
+                            break
+                        end
+                    end
+
+                    if allDestroyed and gameState == 'stage-1' then
+                        currentStage = currentStage + 1
+                        gameState = 'stage-1-passed'
+                    end
+                    if allDestroyed and gameState == 'stage-2' then
+                        gameState = 'done'
+                    end
+
+                    break
+                end
+            end
+        end
 
         -- detect upper and lower screen boundary collision, playing a sound
         -- effect and reversing dy if true
@@ -208,9 +250,9 @@ function love.update(dt)
 
 
 
-    -- update our ball based on its DX and DY only if we're in play state;
+    -- update our ball based on its DX and DY only if we're in stage-1 state;
     -- scale the velocity by dt so movement is framerate-independent
-    if gameState == 'play' then
+    if gameState == 'stage-1' or gameState == 'stage-2' then
         ball:update(dt)
     end
 end
@@ -229,18 +271,32 @@ function love.keypressed(key)
         -- if we press enter during either the start or serve phase, it should
         -- transition to the next appropriate state
     elseif key == 'enter' or key == 'return' then
-        if gameState == 'start' then
+        if gameState == 'start' and currentStage == 0 then
+            currentStage = currentStage + 1
+        elseif gameState == 'start' and currentStage ~= 0 then
             gameState = 'serve'
         elseif gameState == 'serve' then
-            gameState = 'play'
+            -- set max speed based on current stage
+            if currentStage == 1 then
+                ballMaxSpeed = 250
+            elseif currentStage == 2 then
+                ballMaxSpeed = 350
+            end
+            gameState = 'stage-' .. currentStage
+        elseif gameState == 'stage-1-passed' then
+            HP = 3
+            ball:reset()
+            player1:reset()
+            testWall = Wall(stageConfigs[2])
+            gameState = 'start'
         elseif gameState == 'done' or gameState == 'over' then
             -- game is simply in a restart phase here
             gameState = 'start'
 
             ball:reset()
             player1:reset()
+            testWall = Wall(stageConfigs[1])
 
-            -- reset score to 0
             HP = 3
         end
     end
@@ -256,31 +312,31 @@ function love.draw()
 
     love.graphics.clear(40 / 255, 45 / 255, 52 / 255, 255 / 255)
 
+    -- display debug info box in top-right corner
+    displayDebugBox()
+
     testWall:render()
     -- render different things depending on which part of the game we're in
-    if gameState == 'start' then
+    if gameState == 'start' and currentStage == 0 then
+        drawAlertBox('Welcome to Arkanoid!', 'Press ENTER to start the game.')
+    elseif gameState == 'start' and currentStage == 1 then
         -- UI messages
-        love.graphics.setFont(smallFont)
-        love.graphics.printf('Welcome to Arkanoid!', 0, VIRTUAL_HEIGHT / 2 - 80, VIRTUAL_WIDTH, 'center')
-        love.graphics.setFont(smallFont)
-        love.graphics.printf('Press ENTER to begin!', 0, VIRTUAL_HEIGHT / 2 + 20, VIRTUAL_WIDTH, 'center')
+        drawAlertBox('STAGE 1', 'Press ENTER to begin!')
+    elseif gameState == 'stage-1-passed' then
+        drawAlertBox('STAGE 1 CLEAR!', 'Press ENTER to load stage 2!')
+    elseif gameState == 'start' and currentStage == 2 then
+        drawAlertBox('LEVEL 2', 'Press ENTER to begin!')
     elseif gameState == 'serve' then
         love.graphics.setFont(smallFont)
-        love.graphics.printf('Press ENTER to launch the ball.',
-            0, VIRTUAL_HEIGHT / 2 - 80, VIRTUAL_WIDTH, 'center')
-    elseif gameState == 'play' then
-        -- no UI messages to display in play
+        drawAlertBox('Throw the ball!', 'Press ENTER to launch!')
     elseif gameState == 'over' then
-        love.graphics.setFont(largeFont)
-        love.graphics.printf('You lose =(',
-            0, VIRTUAL_HEIGHT / 2 - 80, VIRTUAL_WIDTH, 'center')
+        drawAlertBox('You lose =(', 'Press ENTER to reset.')
+        -- love.graphics.setFont(largeFont)
+        -- love.graphics.printf('You lose =(',
+        --     0, VIRTUAL_HEIGHT / 2 - 80, VIRTUAL_WIDTH, 'center')
     elseif gameState == 'done' then
         -- UI messages
-        love.graphics.setFont(largeFont)
-        love.graphics.printf('You win =)',
-            0, VIRTUAL_HEIGHT / 2 - 80, VIRTUAL_WIDTH, 'center')
-        love.graphics.setFont(smallFont)
-        love.graphics.printf('Press Enter to restart!', 0, VIRTUAL_HEIGHT / 2 + 20, VIRTUAL_WIDTH, 'center')
+        drawAlertBox('You WIN! =)', 'Press ENTER to reset.')
     end
 
     -- show the score before ball is rendered so it can move over the text
@@ -294,6 +350,17 @@ function love.draw()
 
     -- end our drawing to push
     push:finish()
+end
+
+--[[
+    Limits the ball's speed to ballMaxSpeed.
+]]
+function limitBallSpeed()
+    local speed = math.sqrt(ball.dx ^ 2 + ball.dy ^ 2)
+    if speed > ballMaxSpeed then
+        ball.dx = (ball.dx / speed) * ballMaxSpeed
+        ball.dy = (ball.dy / speed) * ballMaxSpeed
+    end
 end
 
 --[[
@@ -319,4 +386,75 @@ function displayFPS()
     love.graphics.setColor(0, 255 / 255, 0, 255 / 255)
     love.graphics.print('FPS: ' .. tostring(love.timer.getFPS()), 10, 10)
     love.graphics.setColor(255, 255, 255, 255)
+end
+
+--[[
+    Renders a fancy debug box in the top-right corner with useful info.
+]]
+function displayDebugBox()
+    local boxWidth = 80
+    local boxHeight = 50
+    local x1 = VIRTUAL_WIDTH - boxWidth - 5
+    local y1 = 5
+    local x2 = VIRTUAL_WIDTH - 5
+    local y2 = boxHeight
+
+    -- save current color
+    local old_r, old_g, old_b, old_a = love.graphics.getColor()
+
+    -- draw filled semi-transparent black background
+    love.graphics.setColor(0, 0, 0, 0.8)
+    love.graphics.rectangle('fill', x1, y1, boxWidth, boxHeight)
+
+    -- draw white border with fancy offset
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.rectangle('line', x1 + 3, y1 + 3, boxWidth - 6, boxHeight - 6)
+
+    -- draw debug text
+    love.graphics.setFont(smallFont)
+    love.graphics.setColor(0, 255 / 255, 0, 255 / 255)
+    love.graphics.print('FPS: ' .. tostring(love.timer.getFPS()), x1 + 8, y1 + 8)
+    love.graphics.setColor(255 / 255, 255 / 255, 0, 255 / 255)
+    love.graphics.print('State: ' .. gameState, x1 + 8, y1 + 20)
+    love.graphics.setColor(0 / 255, 200 / 255, 255 / 255, 255 / 255)
+    love.graphics.print('Ball: ' .. string.format('%.0f,%.0f', ball.x, ball.y), x1 + 8, y1 + 32)
+
+    -- restore color
+    love.graphics.setColor(old_r, old_g, old_b, old_a)
+end
+
+--[[
+    Draws an alert box with a title and subtitle centered on screen.
+]]
+function drawAlertBox(title, subtitle)
+    -- draw fancy alert box
+    drawFancyBox(10, VIRTUAL_HEIGHT / 2 - 90, VIRTUAL_WIDTH - 10, VIRTUAL_HEIGHT / 2 + 30)
+
+    -- draw title and subtitle text
+    love.graphics.setFont(largeFont)
+    love.graphics.printf(title, 0, VIRTUAL_HEIGHT / 2 - 60, VIRTUAL_WIDTH, 'center')
+    love.graphics.setFont(smallFont)
+    love.graphics.printf(subtitle, 0, VIRTUAL_HEIGHT / 2, VIRTUAL_WIDTH, 'center')
+end
+
+--[[
+    Draws a fancy box with black fill and white border at specified coordinates.
+    x1, y1: top-left corner
+    x2, y2: bottom-right corner
+]]
+function drawFancyBox(x1, y1, x2, y2)
+    -- save current color
+    old_r, old_g, old_b, old_a = love.graphics.getColor()
+
+    -- calculate dimensions
+    local width = x2 - x1
+    local height = y2 - y1
+
+    -- draw filled black background
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.rectangle('fill', x1, y1, width, height)
+
+    -- draw white border (offset by 5 pixels)
+    love.graphics.setColor(old_r, old_g, old_b, old_a)
+    love.graphics.rectangle('line', x1 + 5, y1 + 5, width - 10, height - 10)
 end
