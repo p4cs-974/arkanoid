@@ -66,8 +66,8 @@ function love.load()
     -- Stage configurations
     stageConfigs = {
         [1] = {
-            rowCount = 2,         -- 4 rows of bricks
-            bricksPerRow = 4,     -- 8 bricks per row
+            rowCount = 5,         -- 4 rows of bricks
+            bricksPerRow = 8,     -- 8 bricks per row
             baseHP = 1,           -- Base HP value
             hpScaling = 'uniform' -- All bricks have 1 HP
         },
@@ -127,6 +127,10 @@ function love.load()
     gameState = 'start'
 
     currentStage = 0
+
+    -- inactivity timer for demo mode
+    inactivityTimer = 0
+    DEMO_DELAY = 15 -- seconds before demo starts
 end
 
 function love.resize(w, h)
@@ -134,7 +138,85 @@ function love.resize(w, h)
 end
 
 function love.update(dt)
-    if gameState == 'serve' then
+    -- track inactivity in start state
+    if gameState == 'start' then
+        inactivityTimer = inactivityTimer + dt
+        if inactivityTimer >= DEMO_DELAY then
+            gameState = 'demo'
+            inactivityTimer = 0
+            -- reset ball for demo
+            ball:reset()
+            ball.dy = -200
+            ball.dx = math.random(-100, 100)
+        end
+    end
+
+    if gameState == 'demo' then
+        -- AI: paddle follows ball
+        local paddleCenter = player1.x + player1.width / 2
+        local ballCenter = ball.x + ball.width / 2
+
+        if ballCenter < paddleCenter - 2 then
+            player1.dx = -PADDLE_SPEED
+        elseif ballCenter > paddleCenter + 2 then
+            player1.dx = PADDLE_SPEED
+        else
+            player1.dx = 0
+        end
+        player1:update(dt)
+
+        -- ball physics (simplified from stage-1/stage-2)
+        if ball:collides(player1) then
+            local currentSpeed = math.sqrt(ball.dx ^ 2 + ball.dy ^ 2)
+            local hitPoint = (ball.x - player1.x) / player1.width
+            hitPoint = math.max(0, math.min(1, hitPoint))
+            local angle = (hitPoint - 0.5) * 2 * (math.pi / 3)
+            ball.dx = currentSpeed * math.sin(angle)
+            ball.dy = -currentSpeed * math.cos(angle)
+            ball.y = player1.y - ball.height - 1
+            limitBallSpeed()
+            sounds['paddle_hit']:play()
+        end
+
+        for _, row in ipairs(testWall.rows) do
+            for _, brick in ipairs(row.bricks) do
+                if brick.alive and ball:collides(brick) then
+                    brick:hit()
+                    ball.dy = -ball.dy
+                    sounds['brick_hit']:play()
+                    break
+                end
+            end
+        end
+
+        -- wall collisions
+        if ball.y <= 0 then
+            ball.y = 0
+            ball.dy = -ball.dy
+            sounds['wall_hit']:play()
+        end
+
+        -- demo ball never dies, just bounces back
+        if ball.y >= VIRTUAL_HEIGHT - 4 then
+            ball.dy = -ball.dy
+            ball.y = VIRTUAL_HEIGHT - 8
+            sounds['wall_hit']:play()
+        end
+
+        if ball.x < 0 then
+            ball.dx = -ball.dx
+            ball.x = 0
+            sounds['wall_hit']:play()
+        end
+
+        if ball.x > VIRTUAL_WIDTH then
+            ball.dx = -ball.dx
+            ball.x = VIRTUAL_WIDTH - 4
+            sounds['wall_hit']:play()
+        end
+
+        ball:update(dt)
+    elseif gameState == 'serve' then
         ball.dy = -200
         ball.dx = math.random(-100, 100)
     elseif gameState == 'stage-1' or gameState == 'stage-2' then
@@ -264,6 +346,11 @@ end
     things to happen right away, just once, like when we want to quit.
 ]]
 function love.keypressed(key)
+    -- reset inactivity timer on any key press during start state
+    if gameState == 'start' then
+        inactivityTimer = 0
+    end
+
     -- `key` will be whatever key this callback detected as pressed
     if key == 'escape' then
         -- the function LÖVE2D uses to quit the application
@@ -275,6 +362,12 @@ function love.keypressed(key)
             currentStage = currentStage + 1
         elseif gameState == 'start' and currentStage ~= 0 then
             gameState = 'serve'
+        elseif gameState == 'demo' then
+            gameState = 'start'
+            ball:reset()
+            player1:reset()
+            -- reset wall for demo
+            testWall = Wall(stageConfigs[currentStage == 0 and 1 or currentStage])
         elseif gameState == 'serve' then
             -- set max speed based on current stage
             if currentStage == 1 then
@@ -329,6 +422,8 @@ function love.draw()
     elseif gameState == 'serve' then
         love.graphics.setFont(smallFont)
         drawAlertBox('Throw the ball!', 'Press ENTER to launch!')
+    elseif gameState == 'demo' then
+        drawDemoBox()
     elseif gameState == 'over' then
         drawAlertBox('You lose =(', 'Press ENTER to reset.')
         -- love.graphics.setFont(largeFont)
@@ -437,6 +532,13 @@ function drawAlertBox(title, subtitle)
     love.graphics.printf(title, 0, VIRTUAL_HEIGHT / 2 - 60, VIRTUAL_WIDTH, 'center')
     love.graphics.setFont(smallFont)
     love.graphics.printf(subtitle, 0, VIRTUAL_HEIGHT / 2, VIRTUAL_WIDTH, 'center')
+end
+
+function drawDemoBox()
+    drawFancyBox(84, VIRTUAL_HEIGHT / 2 - 68, VIRTUAL_WIDTH - 88, VIRTUAL_HEIGHT / 2 - 38)
+
+    love.graphics.setFont(largeFont)
+    love.graphics.printf("DEMO", 0, VIRTUAL_HEIGHT / 2 - 60, VIRTUAL_WIDTH, 'center')
 end
 
 --[[
