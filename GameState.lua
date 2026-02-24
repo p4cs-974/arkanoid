@@ -16,6 +16,8 @@ GameState = {
     STAGE_1 = 'stage-1',
     STAGE_1_PASSED = 'stage-1-passed',
     STAGE_2 = 'stage-2',
+    STAGE_2_PASSED = 'stage-2-passed',
+    STAGE_3 = 'stage-3',
     DONE = 'done',
     OVER = 'over'
 }

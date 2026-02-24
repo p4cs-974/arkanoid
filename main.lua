@@ -69,7 +69,7 @@ function love.load()
     -- Stage configurations
     stageConfigs = {
         [1] = {
-            rowCount = 5,         -- 4 rows of bricks
+            rowCount = 5,         -- 5 rows of bricks
             bricksPerRow = 8,     -- 8 bricks per row
             baseHP = 1,           -- Base HP value
             hpScaling = 'uniform' -- All bricks have 1 HP
@@ -79,6 +79,12 @@ function love.load()
             bricksPerRow = 10,       -- 10 bricks per row
             baseHP = 1,              -- Base HP value
             hpScaling = 'descending' -- Top rows have more HP (1+6-row)
+        },
+        [3] = {
+            rowCount = 7,        -- 7 rows of bricks
+            bricksPerRow = 10,   -- 10 bricks per row
+            baseHP = 2,          -- Higher base HP
+            hpScaling = 'random' -- Random HP between 2-8 for unpredictability
         }
     }
 
@@ -217,7 +223,7 @@ function love.update(dt)
     elseif gameState == GameState.SERVE then
         ball.dy = -200
         ball.dx = math.random(-100, 100)
-    elseif gameState == GameState.STAGE_1 or gameState == GameState.STAGE_2 then
+    elseif gameState == GameState.STAGE_1 or gameState == GameState.STAGE_2 or gameState == GameState.STAGE_3 then
         if love.keyboard.isDown('a') then
             player1.dx = -PADDLE_SPEED
         elseif love.keyboard.isDown('d') then
@@ -278,6 +284,10 @@ function love.update(dt)
                         gameState = GameState.STAGE_1_PASSED
                     end
                     if allDestroyed and gameState == GameState.STAGE_2 then
+                        currentStage = currentStage + 1
+                        gameState = GameState.STAGE_2_PASSED
+                    end
+                    if allDestroyed and gameState == GameState.STAGE_3 then
                         gameState = GameState.DONE
                     end
 
@@ -372,13 +382,27 @@ function love.keypressed(key)
                 ballMaxSpeed = 250
             elseif currentStage == 2 then
                 ballMaxSpeed = 350
+            elseif currentStage == 3 then
+                ballMaxSpeed = 450
             end
-            gameState = currentStage == 1 and GameState.STAGE_1 or GameState.STAGE_2
+            if currentStage == 1 then
+                gameState = GameState.STAGE_1
+            elseif currentStage == 2 then
+                gameState = GameState.STAGE_2
+            else
+                gameState = GameState.STAGE_3
+            end
         elseif gameState == GameState.STAGE_1_PASSED then
             HP = 3
             ball:reset()
             player1:reset()
             testWall = Wall(stageConfigs[2])
+            gameState = GameState.START
+        elseif gameState == GameState.STAGE_2_PASSED then
+            HP = 3
+            ball:reset()
+            player1:reset()
+            testWall = Wall(stageConfigs[3])
             gameState = GameState.START
         elseif gameState == GameState.DONE or gameState == GameState.OVER then
             -- game is simply in a restart phase here
@@ -389,6 +413,7 @@ function love.keypressed(key)
             testWall = Wall(stageConfigs[1])
 
             HP = 3
+            currentStage = 0
         end
     end
 end
@@ -415,6 +440,8 @@ function love.draw()
         drawAlertBox('STAGE 1', 'Press ENTER to begin!')
     elseif gameState == GameState.STAGE_1_PASSED then
         drawAlertBox('STAGE 1 CLEAR!', 'Press ENTER to load stage 2!')
+    elseif gameState == GameState.STAGE_2_PASSED then
+        drawAlertBox('STAGE 2 CLEAR!', 'Press ENTER to load stage 3!')
     elseif gameState == GameState.START and currentStage == 2 then
         drawAlertBox('LEVEL 2', 'Press ENTER to begin!')
     elseif gameState == GameState.SERVE then
