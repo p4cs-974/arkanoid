@@ -29,8 +29,13 @@ Paddle = Class {}
 function Paddle:init(x, y, width, height)
     self.x = x
     self.y = y
+    self.baseX = x
+    self.baseY = y
+    self.baseWidth = width
+    self.baseHeight = height
     self.width = width
     self.height = height
+    self.defaultWidth = width
     self.dy = 0
 end
 
@@ -50,11 +55,21 @@ function Paddle:update(dt)
     end
 end
 
-function Paddle:reset()
-    self.x = VIRTUAL_WIDTH / 2 - 13
-    self.y = VIRTUAL_HEIGHT - 20
+function Paddle:reset(resetWidth)
+    self.x = self.baseX
+    self.y = self.baseY
     self.dx = 0
     self.dy = 0
+
+    if resetWidth == nil or resetWidth then
+        self.width = self.baseWidth
+        self.height = self.baseHeight
+    end
+end
+
+function Paddle:setWidth(width)
+    self.width = width
+    self.x = math.max(0, math.min(VIRTUAL_WIDTH - self.width, self.x))
 end
 
 --[[

@@ -21,6 +21,8 @@ function Brick:hit()
     if self.hp <= 0 then
         self.alive = false
     end
+
+    return not self.alive
 end
 
 function Brick:render()

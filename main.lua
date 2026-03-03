@@ -38,6 +38,7 @@ require 'Paddle'
 require 'Wall'
 require 'Row'
 require 'Brick'
+require 'PowerUp'
 -- our Ball class, which isn't much different than a Paddle structure-wise
 -- but which will mechanically function very differently
 require 'Ball'
@@ -55,6 +56,9 @@ VIRTUAL_HEIGHT = 300
 
 -- paddle movement speed
 PADDLE_SPEED = 200
+PADDLE_WIDEN_AMOUNT = 14
+MAX_HP = 3
+POWERUP_DROP_CHANCE = 0.18
 
 --[[
     Called just once at the beginning of the game; used to set up
@@ -121,10 +125,11 @@ function love.load()
 
     player1 = Paddle(VIRTUAL_WIDTH / 2 - 13, VIRTUAL_HEIGHT - 20, 26, 5)
 
+    activeBalls = {}
+    activePowerUps = {}
+    resetBalls()
 
-    ball = Ball(VIRTUAL_WIDTH / 2 - 2, VIRTUAL_HEIGHT - 26, 4, 4)
-
-    HP = 3
+    HP = MAX_HP
 
     ballMaxSpeed = 250
 
@@ -149,13 +154,16 @@ function love.update(dt)
             gameState = GameState.DEMO
             inactivityTimer = 0
             -- reset ball for demo
-            ball:reset()
+            resetBalls()
+            local ball = getPrimaryBall()
             ball.dy = -200
             ball.dx = math.random(-100, 100)
         end
     end
 
     if gameState == GameState.DEMO then
+        local ball = getPrimaryBall()
+
         -- AI: paddle follows ball
         local paddleCenter = player1.x + player1.width / 2
         local ballCenter = ball.x + ball.width / 2
@@ -221,6 +229,7 @@ function love.update(dt)
 
         ball:update(dt)
     elseif gameState == GameState.SERVE then
+        local ball = getPrimaryBall()
         ball.dy = -200
         ball.dx = math.random(-100, 100)
     elseif gameState == GameState.STAGE_1 or gameState == GameState.STAGE_2 or gameState == GameState.STAGE_3 then
@@ -233,102 +242,88 @@ function love.update(dt)
         end
         player1:update(dt)
 
-        if ball:collides(player1) then
-            -- Get current speed (maintain constant speed after bounce)
-            local currentSpeed = math.sqrt(ball.dx ^ 2 + ball.dy ^ 2)
-
-            -- Calculate where on the paddle the ball hit (0 = left edge, 1 = right edge)
-            local hitPoint = (ball.x - player1.x) / player1.width
-
-            -- Clamp hitPoint to handle edge cases
-            hitPoint = math.max(0, math.min(1, hitPoint))
-
-            -- Map hitPoint to angle: center (0.5) = 0°, left edge = -60°, right edge = +60°
-            local angle = (hitPoint - 0.5) * 2 * (math.pi / 3)
-
-            -- Calculate new velocity: angle 0 = straight up (negative Y)
-            ball.dx = currentSpeed * math.sin(angle)
-            ball.dy = -currentSpeed * math.cos(angle)
-
-            -- Push ball out of paddle to prevent sticking
-            ball.y = player1.y - ball.height - 1
-
-            limitBallSpeed()
-
-            sounds['paddle_hit']:play()
+        for _, ball in ipairs(activeBalls) do
+            if ball:collides(player1) then
+                bounceBallOffPaddle(ball)
+                sounds['paddle_hit']:play()
+            end
         end
 
-        for _, row in ipairs(testWall.rows) do
-            for _, brick in ipairs(row.bricks) do
-                if brick.alive and ball:collides(brick) then
-                    brick:hit()
-                    ball.dy = -ball.dy
-                    sounds['brick_hit']:play()
+        for _, ball in ipairs(activeBalls) do
+            local hitBrick = false
 
-                    -- check win condition
-                    local allDestroyed = true
-                    for _, checkRow in ipairs(testWall.rows) do
-                        for _, checkBrick in ipairs(checkRow.bricks) do
-                            if checkBrick.alive then
-                                allDestroyed = false
-                                break
-                            end
+            for _, row in ipairs(testWall.rows) do
+                for _, brick in ipairs(row.bricks) do
+                    if brick.alive and ball:collides(brick) then
+                        local destroyed = brick:hit()
+                        ball.dy = -ball.dy
+                        sounds['brick_hit']:play()
+
+                        if destroyed then
+                            maybeSpawnPowerUp(brick)
                         end
-                        if not allDestroyed then
-                            break
+
+                        if isWallCleared() then
+                            advanceStageState()
                         end
-                    end
 
-                    if allDestroyed and gameState == GameState.STAGE_1 then
-                        currentStage = currentStage + 1
-                        gameState = GameState.STAGE_1_PASSED
+                        hitBrick = true
+                        break
                     end
-                    if allDestroyed and gameState == GameState.STAGE_2 then
-                        currentStage = currentStage + 1
-                        gameState = GameState.STAGE_2_PASSED
-                    end
-                    if allDestroyed and gameState == GameState.STAGE_3 then
-                        gameState = GameState.DONE
-                    end
+                end
 
+                if hitBrick then
                     break
                 end
             end
         end
 
-        -- detect upper and lower screen boundary collision, playing a sound
-        -- effect and reversing dy if true
-        if ball.y <= 0 then
-            ball.y = 0
-            ball.dy = -ball.dy
-            sounds['wall_hit']:play()
+        for i = #activeBalls, 1, -1 do
+            local ball = activeBalls[i]
+
+            if ball.y <= 0 then
+                ball.y = 0
+                ball.dy = -ball.dy
+                sounds['wall_hit']:play()
+            end
+
+            if ball.y >= VIRTUAL_HEIGHT - ball.height then
+                table.remove(activeBalls, i)
+            elseif ball.x < 0 then
+                ball.dx = -ball.dx
+                ball.x = 0
+                sounds['wall_hit']:play()
+            elseif ball.x > VIRTUAL_WIDTH - ball.width then
+                ball.dx = -ball.dx
+                ball.x = VIRTUAL_WIDTH - ball.width
+                sounds['wall_hit']:play()
+            end
         end
 
-        -- -4 to account for the ball's size
-        if ball.y >= VIRTUAL_HEIGHT - 4 then
+        for i = #activePowerUps, 1, -1 do
+            local powerUp = activePowerUps[i]
+            powerUp:update(dt)
+
+            if powerUp:collides(player1) then
+                applyPowerUp(powerUp.kind)
+                table.remove(activePowerUps, i)
+            elseif powerUp.y > VIRTUAL_HEIGHT then
+                table.remove(activePowerUps, i)
+            end
+        end
+
+        if #activeBalls == 0 then
             HP = HP - 1
+            activePowerUps = {}
             sounds['score']:play()
 
             if HP == 0 then
                 gameState = GameState.OVER
             else
                 gameState = GameState.SERVE
-                ball:reset()
-                player1:reset()
+                resetBalls()
+                player1:reset(false)
             end
-        end
-
-        -- if we reach the left edge of the screen, reset the ball
-        if ball.x < 0 then
-            ball.dx = -ball.dx
-            ball.x = 0
-            sounds['wall_hit']:play()
-        end
-
-        if ball.x > VIRTUAL_WIDTH then
-            ball.dx = -ball.dx
-            ball.x = VIRTUAL_WIDTH - 4
-            sounds['wall_hit']:play()
         end
     end
 
@@ -342,8 +337,10 @@ function love.update(dt)
 
     -- update our ball based on its DX and DY only if we're in stage-1 state;
     -- scale the velocity by dt so movement is framerate-independent
-    if gameState == GameState.STAGE_1 or gameState == GameState.STAGE_2 then
-        ball:update(dt)
+    if gameState == GameState.STAGE_1 or gameState == GameState.STAGE_2 or gameState == GameState.STAGE_3 then
+        for _, ball in ipairs(activeBalls) do
+            ball:update(dt)
+        end
     end
 end
 
@@ -372,8 +369,9 @@ function love.keypressed(key)
             gameState = 'serve'
         elseif gameState == GameState.DEMO then
             gameState = GameState.START
-            ball:reset()
-            player1:reset()
+            resetBalls()
+            activePowerUps = {}
+            player1:reset(true)
             -- reset wall for demo
             testWall = Wall(stageConfigs[currentStage == 0 and 1 or currentStage])
         elseif gameState == GameState.SERVE then
@@ -393,26 +391,29 @@ function love.keypressed(key)
                 gameState = GameState.STAGE_3
             end
         elseif gameState == GameState.STAGE_1_PASSED then
-            HP = 3
-            ball:reset()
-            player1:reset()
+            HP = MAX_HP
+            resetBalls()
+            activePowerUps = {}
+            player1:reset(true)
             testWall = Wall(stageConfigs[2])
             gameState = GameState.START
         elseif gameState == GameState.STAGE_2_PASSED then
-            HP = 3
-            ball:reset()
-            player1:reset()
+            HP = MAX_HP
+            resetBalls()
+            activePowerUps = {}
+            player1:reset(true)
             testWall = Wall(stageConfigs[3])
             gameState = GameState.START
         elseif gameState == GameState.DONE or gameState == GameState.OVER then
             -- game is simply in a restart phase here
             gameState = GameState.START
 
-            ball:reset()
-            player1:reset()
+            resetBalls()
+            activePowerUps = {}
+            player1:reset(true)
             testWall = Wall(stageConfigs[1])
 
-            HP = 3
+            HP = MAX_HP
             currentStage = 0
         end
     end
@@ -463,7 +464,13 @@ function love.draw()
     displayHP()
 
     player1:render()
-    ball:render()
+    for _, powerUp in ipairs(activePowerUps) do
+        powerUp:render()
+    end
+
+    for _, ball in ipairs(activeBalls) do
+        ball:render()
+    end
 
     -- display FPS for debugging; simply comment out to remove
     -- displayFPS()
@@ -476,6 +483,7 @@ end
     Limits the ball's speed to ballMaxSpeed.
 ]]
 function limitBallSpeed()
+    local ball = getPrimaryBall()
     local speed = math.sqrt(ball.dx ^ 2 + ball.dy ^ 2)
     if speed > ballMaxSpeed then
         ball.dx = (ball.dx / speed) * ballMaxSpeed
@@ -539,6 +547,7 @@ function displayDebugBox()
     love.graphics.setColor(255 / 255, 255 / 255, 0, 255 / 255)
     love.graphics.print('State: ' .. gameState, x1 + 8, y1 + 20)
     love.graphics.setColor(0 / 255, 200 / 255, 255 / 255, 255 / 255)
+    local ball = getPrimaryBall()
     love.graphics.print('Ball: ' .. string.format('%.0f,%.0f', ball.x, ball.y), x1 + 8, y1 + 32)
 
     -- restore color
@@ -586,4 +595,114 @@ function drawFancyBox(x1, y1, x2, y2)
     -- draw white border (offset by 5 pixels)
     love.graphics.setColor(old_r, old_g, old_b, old_a)
     love.graphics.rectangle('line', x1 + 2, y1 + 2, width - 4, height - 4)
+end
+
+function createBall(x, y, dx, dy)
+    local ball = Ball(x or VIRTUAL_WIDTH / 2 - 2, y or VIRTUAL_HEIGHT - 26, 4, 4)
+    ball.dx = dx or 0
+    ball.dy = dy or 0
+    return ball
+end
+
+function resetBalls()
+    activeBalls = {createBall()}
+end
+
+function getPrimaryBall()
+    if #activeBalls == 0 then
+        resetBalls()
+    end
+
+    return activeBalls[1]
+end
+
+function bounceBallOffPaddle(ball)
+    local currentSpeed = math.sqrt(ball.dx ^ 2 + ball.dy ^ 2)
+    if currentSpeed == 0 then
+        currentSpeed = 200
+    end
+
+    local hitPoint = (ball.x - player1.x) / player1.width
+    hitPoint = math.max(0, math.min(1, hitPoint))
+
+    local angle = (hitPoint - 0.5) * 2 * (math.pi / 3)
+    ball.dx = currentSpeed * math.sin(angle)
+    ball.dy = -currentSpeed * math.cos(angle)
+    ball.y = player1.y - ball.height - 1
+
+    local speed = math.sqrt(ball.dx ^ 2 + ball.dy ^ 2)
+    if speed > ballMaxSpeed then
+        ball.dx = (ball.dx / speed) * ballMaxSpeed
+        ball.dy = (ball.dy / speed) * ballMaxSpeed
+    end
+end
+
+function maybeSpawnPowerUp(brick)
+    if math.random() > POWERUP_DROP_CHANCE then
+        return
+    end
+
+    local roll = math.random(3)
+    local kind = 'widen'
+
+    if roll == 2 then
+        kind = 'fork'
+    elseif roll == 3 then
+        kind = 'hp'
+    end
+
+    table.insert(activePowerUps, PowerUp(
+        brick.x + brick.width / 2 - 6,
+        brick.y + brick.height / 2 - 6,
+        kind
+    ))
+end
+
+function applyPowerUp(kind)
+    if kind == 'widen' then
+        player1:setWidth(math.min(player1.width + PADDLE_WIDEN_AMOUNT, player1.baseWidth + PADDLE_WIDEN_AMOUNT * 2))
+    elseif kind == 'fork' then
+        local sourceBall = activeBalls[1]
+
+        if sourceBall == nil then
+            sourceBall = createBall(player1.x + player1.width / 2 - 2, player1.y - 12, 80, -200)
+            table.insert(activeBalls, sourceBall)
+        end
+
+        local forkDX = sourceBall.dx
+        if math.abs(forkDX) < 30 then
+            forkDX = 80
+        end
+
+        local forkBall = createBall(sourceBall.x, sourceBall.y, -forkDX, sourceBall.dy)
+        table.insert(activeBalls, forkBall)
+    elseif kind == 'hp' then
+        HP = math.min(MAX_HP, HP + 1)
+    end
+end
+
+function isWallCleared()
+    for _, row in ipairs(testWall.rows) do
+        for _, brick in ipairs(row.bricks) do
+            if brick.alive then
+                return false
+            end
+        end
+    end
+
+    return true
+end
+
+function advanceStageState()
+    activePowerUps = {}
+
+    if gameState == GameState.STAGE_1 then
+        currentStage = currentStage + 1
+        gameState = GameState.STAGE_1_PASSED
+    elseif gameState == GameState.STAGE_2 then
+        currentStage = currentStage + 1
+        gameState = GameState.STAGE_2_PASSED
+    elseif gameState == GameState.STAGE_3 then
+        gameState = GameState.DONE
+    end
 end
