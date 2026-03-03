@@ -356,6 +356,12 @@ function love.keypressed(key)
         inactivityTimer = 0
     end
 
+    if key == 'w' then
+        gameState = GameState.DONE
+    elseif key == 'l' then
+        gameState = GameState.OVER
+    end
+
     -- `key` will be whatever key this callback detected as pressed
     if key == 'escape' then
         -- the function LÖVE2D uses to quit the application
@@ -605,7 +611,7 @@ function createBall(x, y, dx, dy)
 end
 
 function resetBalls()
-    activeBalls = {createBall()}
+    activeBalls = { createBall() }
 end
 
 function getPrimaryBall()
